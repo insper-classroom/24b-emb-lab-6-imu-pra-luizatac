@@ -16,6 +16,9 @@ const int MPU_ADDRESS = 0x68;
 const int I2C_SDA_GPIO = 4;
 const int I2C_SCL_GPIO = 5;
 
+
+#define SAMPLE_PERIOD (0.01f)
+
 static void mpu6050_reset() {
     // Two byte reset. First byte register, second byte data
     // There are a load more options to set up the device in different ways that could be added here
@@ -68,13 +71,45 @@ void mpu6050_task(void *p) {
     mpu6050_reset();
     int16_t acceleration[3], gyro[3], temp;
 
+    FusionAhrs ahrs;
+    FusionAhrsInitialise(&ahrs);
+
     while(1) {
         mpu6050_read_raw(acceleration, gyro, &temp);
+
+        FusionVector gyroscope = {
+            .axis.x = gyro[0] / 131.0f,
+            .axis.y = gyro[1] / 131.0f,
+            .axis.z = gyro[2] / 131.0f,
+        };
+
+        FusionVector accelerometer = {
+            .axis.x = acceleration[0] / 16384.0f,
+            .axis.y = acceleration[1] / 16384.0f,
+            .axis.z = acceleration[2] / 16384.0f,
+        };
+
+        
+        FusionAhrsUpdateNoMagnetometer(&ahrs, gyroscope, accelerometer, SAMPLE_PERIOD);
+
+        
+        const FusionEuler euler = FusionQuaternionToEuler(FusionAhrsGetQuaternion(&ahrs));
+
+        printf("Roll: %0.1f, Pitch: %0.1f, Yaw: %0.1f\n", euler.angle.roll, euler.angle.pitch, euler.angle.yaw);
+
+        
+        const int DEADZONE = 10000; 
+        if (acceleration[1] > (30000 + DEADZONE)) {
+            printf("Mouse click detected!\n");
+            printf("Acc. X = %d, Y = %d, Z = %d\n", acceleration[0], acceleration[1], acceleration[2]);
+        }
+
         printf("Acc. X = %d, Y = %d, Z = %d\n", acceleration[0], acceleration[1], acceleration[2]);
         printf("Gyro. X = %d, Y = %d, Z = %d\n", gyro[0], gyro[1], gyro[2]);
         printf("Temp. = %f\n", (temp / 340.0) + 36.53);
 
-        vTaskDelay(pdMS_TO_TICKS(10));
+
+        vTaskDelay(pdMS_TO_TICKS(50)); 
     }
 
 
